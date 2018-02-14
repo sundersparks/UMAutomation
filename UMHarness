@@ -1,0 +1,71 @@
+package com.mufg.tap.selenium.actions;
+
+import java.io.IOException;
+
+import com.mufg.tap.selenium.common.FileUtilities;
+import com.mufg.tap.selenium.harness.ConfigParams;
+import com.mufg.tap.selenium.reporting.HtmlSummaryReport;
+
+
+public class Harness {
+
+	com.mufg.tap.selenium.harness.Harness oHarness;
+	FileUtilities fileUtility = new FileUtilities();
+	ConfigParams CONFIG = ConfigParams.SINGLETON;
+
+	/****************************************************************
+	 * @Method Name : testHarness
+	 * @Method Description : Delete and create the temporary folder, Starts the execution flow
+	 * @param args
+	 *            :String[]
+	 * @param Sample
+	 *            Usage : testHarness(String[] args);
+	 * @throws Exception 
+	 ****************************************************************/
+	public void testHarness(String[] args) throws Exception {
+		
+		//fileUtility.makeLibAndResourcesReady();
+		//Delete and create the required folder for execution
+		fileUtility.deleteTempFolder();
+		fileUtility.deleteFolder();
+		fileUtility.createFolder();
+		fileUtility.createTxtFile();
+		oHarness = new com.mufg.tap.selenium.harness.Harness();
+		
+		oHarness.runTestSet();
+	}
+
+	public static void main(String args[]) throws Exception {
+		try {
+			Harness oHarness = new Harness();
+			oHarness.testHarness(args);
+			HtmlSummaryReport htmlSummaryReport = new HtmlSummaryReport();
+			htmlSummaryReport.createHTMLSummaryReport(AppDriver.summaryMAP);
+		} catch (Exception e) {
+			e.printStackTrace();
+		} finally {
+			System.out.println("Execution Status: ");
+			System.out.println("Passed: "+com.mufg.tap.selenium.harness.Harness.passedCount);
+			System.out.println("Failed: "+com.mufg.tap.selenium.harness.Harness.failedCount);
+			System.out.println("Warning: "+com.mufg.tap.selenium.harness.Harness.warningCount);
+			System.out.println("Not Completed: "+com.mufg.tap.selenium.harness.Harness.notCompletedCount);
+
+			try {
+				//Kill the process after the execution is completed. 
+				Runtime.getRuntime().exec("taskkill /F /IM IEDriverServer.exe");
+				Runtime.getRuntime().exec("taskkill /F /IM chromedriver.exe");
+				
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+			if(com.mufg.tap.selenium.harness.Harness.failedCount > 0){
+				throw new Exception( "Selenium Run Fails!");
+				}else if (com.mufg.tap.selenium.harness.Harness.failedCount == 0 && com.mufg.tap.selenium.harness.Harness.passedCount == 0) {
+				throw new Exception( "Selenium Run Fails!");
+				}else{
+				System.out.println("Selenium Run Successfull!");
+				}
+
+		}
+	}
+}
