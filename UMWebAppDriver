@@ -1,0 +1,73 @@
+package com.mufg.tap.selenium.actions;
+
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.util.Map;
+
+import com.mufg.tap.selenium.engine.TestResultLogger;
+import com.mufg.tap.selenium.utils.DataRow;
+import com.mufg.tap.selenium.utils.Logger;
+
+
+
+public abstract class WebAppDriver implements
+		com.mufg.tap.selenium.engine.AppDriver {
+	private Logger logger = new Logger(this);
+	public static TestResultLogger oRPT;
+	public WebActions webActions;
+
+	public void perform(String moduleCode, String actionCode, DataRow input,
+			Map<String, String> output) {
+		eval(moduleCode, actionCode, input, output);
+	}
+
+	public void recover() {
+
+	}
+
+	public void initialize(TestResultLogger resultLogger) {
+		
+		setORPT(resultLogger);
+		
+	}
+	//To fix the Sonar Critical issue -   "Dodgy - Write to static field from instance method"
+	public static void setORPT(TestResultLogger resultLogger){
+		oRPT = resultLogger;
+	}
+	/****************************************************************
+	 * @function Invokes the execution based on the action code.
+	 * @param moduleCode
+	 * @param actionCode
+	 * @param input
+	 * @param output
+	 ****************************************************************/
+	public void eval(String moduleCode, String actionCode, DataRow input,
+			Map<String, String> output) {
+		try {
+			Class<?> clazz = this.getClass();
+			for (Method method : clazz.getMethods())
+				if (method.getName().equals(actionCode)) {
+					try {
+						logger.trace("Executing............." + actionCode);
+						//Invoke the execution based on the action code.
+						method.invoke(this, input, output);
+					} catch (IllegalArgumentException e) {
+						e.printStackTrace();
+						logger.handleError("Exception Caught : "
+								+ e.getMessage());
+					} catch (IllegalAccessException e) {
+						e.printStackTrace();
+						logger.handleError("Exception Caught : "
+								+ e.getMessage());
+					} catch (InvocationTargetException e) {
+						e.printStackTrace();
+						logger.handleError("Exception Caught : "
+								+ e.getMessage());
+					}
+				}
+		} catch (SecurityException e) {
+			logger.trace(e.getMessage());
+		}
+
+	}
+}
