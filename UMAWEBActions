@@ -1,0 +1,1397 @@
+package com.mufg.tap.selenium.actions;
+
+import java.awt.AWTException;
+import java.awt.Robot;
+import java.awt.event.KeyEvent;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+
+import org.openqa.selenium.By;
+import org.openqa.selenium.Keys;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
+import org.openqa.selenium.server.SeleniumCommandTimedOutException;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.Select;
+import org.openqa.selenium.support.ui.WebDriverWait;
+
+import com.mufg.tap.selenium.harness.ConfigParams;
+import com.mufg.tap.selenium.utils.ExcelAccess;
+import com.mufg.tap.selenium.utils.Logger;
+
+import com.google.common.base.Predicate;
+import com.thoughtworks.selenium.SeleniumException;
+import com.thoughtworks.selenium.webdriven.WebDriverBackedSelenium;
+
+
+@SuppressWarnings("unused")
+public class WebActions {
+	public List<Map> uiMap;
+	private String sDynamicValue1 = "_x";
+	private String sDynamicValue2 = "_y";
+	public WebDriver webDriver;
+	public WebDriverBackedSelenium selenium;
+	Logger LOGGER = Logger.getInstance();
+
+	public WebActions(WebDriver webDriver, WebDriverBackedSelenium selenium) {
+		this.webDriver = webDriver;
+		this.selenium = selenium;
+		readUIMap();
+	}
+
+	public void readUIMap() {
+		uiMap = readLocators();
+	}
+	
+	/****************************************************************
+	 * @Method Name : readLocators
+	 * @Method Description : Reads locators sheet from the DataTable
+	 * @param Sample
+	 *            Usage : readLocators();
+	 * @return List
+	 ****************************************************************/
+	public List<Map> readLocators() {
+		List<Map> locators = new ArrayList<Map>();
+		try {
+			ExcelAccess.accessSheet(
+					ConfigParams.SINGLETON.properties.getProperty("DataTable"),
+					"locators", new ExcelAccess.RowArrayBuilder(locators));
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return locators;
+	}
+
+	/****************************************************************
+	 * @Function Launches the Application in the Browser
+	 * @param sBrowser
+	 *            Name of the Browser
+	 * @param sURL
+	 *            URL of the page to be opened.
+	 ****************************************************************/
+	public void launchApplication(String sURL) {
+		webDriver.get(sURL);
+	}
+
+	/****************************************************************
+	 * @Function Validate the page title
+	 * @param sPageTitle
+	 * @return True or False based on the Page title.
+	 ****************************************************************/
+	public boolean pageMatch(String sPageTitle) {
+		if (sPageTitle.equals(webDriver.getTitle())) {
+			return true;
+		}
+		return false;
+	}
+
+	/****************************************************************
+	 * @Function sets the value to the specified UI Element
+	 * @param ElementName
+	 *            which has to be set
+	 * @param Value
+	 *            that is to be set
+	 ****************************************************************/
+	public void setValue(String sElementName, String sValue) {
+		Map result = null;
+		try {
+			result = getElementMap(sElementName);
+			if (result != null) {
+				String sLocator = (String) result.get("locator");
+				String sType = (String) result.get("type");
+				String sOtherInfo = "";
+				try {
+					sOtherInfo = (String) result.get("others");
+				} catch (NullPointerException e) {
+				}
+				if (sType.equalsIgnoreCase("textBox")
+						|| sType.equalsIgnoreCase("textArea")) {
+					if (sOtherInfo != null && (sOtherInfo.matches("ajax")))
+						setAjaxElement(sLocator, sValue,
+								(String) result.get("ajaxInfo"));
+					else {
+						try {
+							if (checkElement(sLocator, 10)) {
+
+								getwebDriverLocator(sLocator).sendKeys(sValue);
+								LOGGER.trace("Typed text '" + sValue
+										+ "' in the input element '"
+										+ sElementName + "'");
+
+							}
+						} catch (Exception e) {
+						}
+					}
+				} else if (sType.equalsIgnoreCase("dropDown")
+						&& (sValue != null) && (!(sValue.equals("")))) {
+					if (checkElement(sLocator, 10)) {
+						if (sElementName.matches("productSelection.format")) {
+							Thread.sleep(2500);// To Check Format DropDown
+						}
+						try {
+
+							Select selectOption = new Select(
+									getwebDriverLocator(sLocator));
+							selectOption.selectByVisibleText(sValue);
+							LOGGER.trace("Selected label '" + sValue
+									+ "' in the input element '" + sElementName
+									+ "'");
+						} catch (Exception e) {
+
+						}
+					}
+				} else if (sType.equalsIgnoreCase("radioButton")) {
+					if (checkElement(sLocator, 10)) {
+						if (sValue.equals("Yes")) {
+							getwebDriverLocator(sLocator).click();
+							LOGGER.trace("Selected the input element '"
+									+ sElementName + "'");
+						} else if (sValue.equals("No")) {
+							getwebDriverLocator(sLocator).click();
+							LOGGER.trace("Deselected the input element '"
+									+ sElementName + "'");
+						}
+
+					}
+				} else if (sType.equalsIgnoreCase("checkBox")) {
+					if (checkElement(sLocator, 10)) {
+						if (sValue.equals("Yes")) {
+							getwebDriverLocator(sLocator).click();
+							LOGGER.trace("Selected the input element '"
+									+ sElementName + "'");
+						}
+					}
+				} else if (sType.equalsIgnoreCase("multiSelectBox")) {
+					setMultiSelectBox(sElementName, sValue);
+				}
+
+			}
+		} catch (NullPointerException e) {
+			LOGGER.trace("Error caused By \"" + sElementName + "\" "
+					+ e.getMessage());
+		} catch (Exception e) {
+			LOGGER.trace("Error caused By \"" + sElementName + "\" "
+					+ e.getMessage());
+		}
+	}
+
+	/****************************************************************
+	 * @Function set the value to Incremental box
+	 * @param Name
+	 *            of the Locator
+	 * @param Value
+	 * @param Name
+	 *            of the Incremental list
+	 ****************************************************************/
+	public void setAjaxElement(String sLocator, String sValue, String sAjaxInfo) {
+		try {
+			if (sAjaxInfo.equals("Calendar"))
+				setCalendar(sLocator, sValue);
+			else if (sAjaxInfo.equals("ajax")) {
+				typeWithAjax(sLocator, sValue);
+			} else {
+				setIncrementalBox(sLocator, sValue, sAjaxInfo);
+			}
+		} catch (Exception e) {
+			LOGGER.trace("Error caused while setting value to \"" + sLocator
+					+ "\"" + e.getMessage());
+		}
+	}
+
+	/****************************************************************
+	 * @Function sets the value to the Calendar control
+	 * @param Locator
+	 * @param Value
+	 ****************************************************************/
+	public void setCalendar(String sLocator, String sValue) {
+		try {
+			if (checkElement(sLocator, 5)) {
+				getwebDriverLocator(sLocator).click();
+				webDriver.findElement(
+						By.linkText(sValue.substring(0, sValue.indexOf("/"))
+								.toString())).click();
+			}
+		} catch (Exception e) {
+			LOGGER.trace("Error caused while setting value to \"" + sLocator
+					+ "\"" + e.getMessage());
+		}
+	}
+
+	/****************************************************************
+	 * @Function sets the value of the Incremental Box
+	 * @param Locator
+	 * @param Value
+	 * @param Name
+	 *            of the Incremental list
+	 ****************************************************************/
+	public void setIncrementalBox(String sLocator, String sValue,
+			String sAjaxInfo) {
+		try {
+			String sTemp = sValue;
+			if (!(sValue.equals(""))) {
+				if (sValue.contains(","))
+					sValue = sValue.substring(0, sValue.indexOf(","));
+				WebElement textBox = getwebDriverLocator(sLocator);
+				textBox.sendKeys("");
+				textBox.sendKeys(sValue);
+				LOGGER.trace("Typed text '" + sValue
+						+ "' in the input element '" + sLocator + "'");
+				if (checkElementForIncrementalBox("//div[@id='" + sAjaxInfo
+						+ "']/ul/li[1]", 30)) {
+					if (webDriver
+							.findElement(
+									By.xpath(("//div[@id='" + sAjaxInfo + "']/ul/li[1]")))
+							.isDisplayed()) {
+						webDriver.findElement(
+								By.xpath("//div[@id='" + sAjaxInfo
+										+ "']/ul/li[1]")).click();
+						LOGGER.trace("Set the Value : '" + sTemp
+								+ "' to the input element '" + sLocator + "'");
+					}
+				}
+			}
+		} catch (Exception e) {
+			LOGGER.trace("Error caught Setting Value to the Incremental Box : \" "
+					+ sLocator + "\"");
+		}
+	}
+
+	/****************************************************************
+	 * @Function Setting a value to ajax elements
+	 * @param Locator
+	 *            whose value has to set
+	 * @param Value
+	 *            to be set
+	 ****************************************************************/
+	public void typeWithAjax(String sLocator, String sValue) {
+		try {
+			if (!(sValue.equals(""))) {
+				if (sValue.contains(","))
+					sValue = sValue.substring(0, sValue.indexOf(","));
+				WebElement textBox = getwebDriverLocator(sLocator);
+				textBox.sendKeys("");
+				textBox.sendKeys(sValue);
+				getwebDriverLocator(sLocator).sendKeys(Keys.TAB);
+				LOGGER.trace("Typed text '" + sValue
+						+ "' in the input element '" + sLocator + "'");
+			}
+		} catch (Exception e) {
+			LOGGER.trace("Error caught Setting Value " + "\" " + sValue
+					+ " to the Element: \" " + sLocator + "\"");
+		}
+	}
+
+	/****************************************************************
+	 * @Function selects the options from MultiSelectBox
+	 * @param MultiSelectBox
+	 *            which has to be set
+	 * @param Optionts
+	 *            to be selected
+	 ****************************************************************/
+
+	public void setMultiSelectBox(String sMultiSelectBox,
+			String sOptionsToBeSelected) {
+		try {
+			getwebDriverLocator(sMultiSelectBox).click();
+			try {
+				WebElement selectOption = getwebDriverLocator(getLocator("Select All"));
+				if (selectOption.isDisplayed()) {
+					selectOption.click();
+					selectOption.click();
+				}
+			} catch (SeleniumException e) {
+				LOGGER.trace("Error : Unable to find Select All checkbox for "
+						+ sMultiSelectBox + " MultiselectBox");
+			}
+
+			String sOptions[] = sOptionsToBeSelected.split(";");
+			for (String sOption : sOptions) {
+				if (checkElement(getLocator(sOption), 3)) {
+					getwebDriverLocator(getLocator(sOption)).click();
+					LOGGER.trace("Selected the Option :" + sOption);
+				}
+			}
+			getwebDriverLocator(getLocator(sMultiSelectBox)).click();
+		} catch (Exception e) {
+			LOGGER.trace("Error : caused by " + sMultiSelectBox + " Element");
+		}
+	}
+
+	/****************************************************************
+	 * @Function Returns the Locator for the given ElementName
+	 * @param ElementName
+	 * @return Locator String
+	 ****************************************************************/
+	public String getLocator(String sElementName) {
+		Map result = null;
+		String sLocator = "";
+		try {
+			for (Map map : uiMap) {
+				String temp = (String) map.get("elementName");
+				if (sElementName.matches(temp) || sElementName.equals(temp)) {
+					result = map;
+					break;
+				}
+			}
+			if (result != null)
+				sLocator = (String) result.get("locator");
+			else {
+				LOGGER.trace("Error : Unknown Element \" " + sElementName
+						+ " \"");
+			}
+
+		} catch (RuntimeException e) {
+			LOGGER.trace("Error: Trying to retrieve the Locator of Unknown Element \" "
+					+ sElementName + " \"");
+		}
+		return sLocator;
+	}
+
+	/****************************************************************
+	 * @Function sets the value to all the locators on the specified page.
+	 * @param Name
+	 *            of the Page
+	 * @param Data
+	 *            to be used to set the values
+	 ****************************************************************/
+	public void setPage(String sPageName, Map lData) {
+		List<Map> resultMap = new ArrayList();
+		Map result;
+		String sElement = "";
+		resultMap = getPageLocators(sPageName);
+		setActualStaticPage(sPageName, lData, resultMap);
+	}
+
+	/****************************************************************
+	 * @Function sets the value to the list of selected locators in the
+	 *           specified page
+	 * @param PageName
+	 * @param Data
+	 *            to be used to set the values
+	 * @param List
+	 *            of selected elements
+	 ****************************************************************/
+	public void setCustomPage(String sPageName, Map lData,
+			List<String> selectedElements) {
+		List<Map> resultMap = new ArrayList();
+		Map result;
+		String sElement = "";
+		resultMap = getPageLocators(sPageName);
+		setActualStaticPage(sPageName, lData,
+				getSelectedMappingElements(resultMap, selectedElements));
+	}
+
+	/****************************************************************
+	 * @Function sets the given value to the list of UI elements in the
+	 *           specified page
+	 * @param PageName
+	 * @param Data
+	 *            to be used to set the values
+	 * @param List
+	 *            of selected UI elements
+	 ****************************************************************/
+	public void setActualStaticPage(String sPageName, Map lData,
+			List<Map> uiElements) {
+		String sElement = "";
+		for (Map uiElement : uiElements) {
+			sElement = ((String) uiElement.get("elementName"));
+			if (lData.containsKey(sElement)) {
+				String sData = (String) lData.get(sElement);
+				if (!((((String) uiElement.get("type")).equals("button")) || ((String) uiElement
+						.get("type")).equals("radioButton")))
+					setValue(sElement, sData);
+				else {
+					try {
+						if (sData.equals("Yes")) {
+							String sTemp = getLocator(sElement);
+							if (((String) uiElement.get("type"))
+									.equals("button")) {
+								if (checkElement(sTemp, 60)) {
+									Thread.sleep(4000);
+									getwebDriverLocator(sTemp).click();
+									waitForBrowserStability("300");
+
+								} else {
+									LOGGER.trace("\"" + sElement
+											+ " \" Element Not Found");
+								}
+							} else {
+								if (checkElement(sTemp, 60)) {
+									getwebDriverLocator(sTemp).click();
+									waitForBrowserStability("300");
+								} else {
+									LOGGER.trace("\"" + sElement
+											+ " \" Element Not Found");
+								}
+							}
+						} else
+							continue;
+
+					} catch (NullPointerException e) {
+						LOGGER.trace("Null pointer Exception Caused by \""
+								+ sElement + "\"");
+					} catch (Exception e) {
+						LOGGER.trace("Exception Caused by \"" + sElement + "\"");
+					}
+				}
+				try {
+					Thread.sleep(1000);
+				} catch (InterruptedException e) {
+				}
+			}
+		}
+	}
+
+	/****************************************************************
+	 * @Function sets the value to the dynamic elements in the specified page
+	 * @param PageName
+	 * @param Data
+	 *            to be used to set the values
+	 ****************************************************************/
+	public void setDynamicValues(String sPageName, Map lData) {
+		List<Map> resultMap = new ArrayList();
+		String sElement = "";
+		resultMap = getDynamicLocators(sPageName);
+		setActualDynamicValue(sPageName, lData, resultMap);
+	}
+
+	/****************************************************************
+	 * @Function sets the value to the list of selected dynamic elements in the
+	 *           specified page
+	 * @param PageName
+	 * @param Data
+	 *            to be used to set the values
+	 * @param selected
+	 *            dynamic locators
+	 ****************************************************************/
+	public void setCustomDynamicValues(String sPageName, Map lData,
+			List<String> selectedLocators) {
+		List<Map> resultMap = new ArrayList();
+		Map result;
+		String sElement = "";
+		resultMap = getDynamicLocators(sPageName);
+		setActualDynamicValue(sPageName, lData,
+				getSelectedMappingElements(resultMap, selectedLocators));
+	}
+
+	/****************************************************************
+	 * @Function Creates a sub-set of Mapping Element List only for Specified
+	 *           elements
+	 * @param columnMaps
+	 *            from Mapping file
+	 * @param list
+	 *            of selected elements
+	 * @return sub-set of Mapping Elements
+	 ****************************************************************/
+	public List<Map> getSelectedMappingElements(List<Map> columnMaps,
+			List<String> selectedElements) {
+		List<Map> reDefinedMaps = new ArrayList<Map>();
+		try {
+			for (String element : selectedElements) {
+				for (int i = 0; i < columnMaps.size(); i++) {
+					Map temp = columnMaps.get(i);
+					if (((String) temp.get("elementName")).matches(element)) {
+						reDefinedMaps.add(temp);
+					}
+				}
+			}
+		} catch (Exception e) {
+			LOGGER.trace("Error : Caused while creating sub-set of Mapping Elements");
+		}
+		return reDefinedMaps;
+	}
+
+	/****************************************************************
+	 * @Function sets the given value to the list of UI elements in the
+	 *           specified page
+	 * @param PageName
+	 * @param Data
+	 *            to be used to set the values
+	 * @param selected
+	 *            dynamic locators
+	 ****************************************************************/
+	public void setActualDynamicValue(String sPageName, Map lData,
+			List<Map> uiElements) {
+		String sElement = "";
+		int iCount = 0;
+		String sDataValues[] = {};
+		for (Map uiElement : uiElements) {
+			try {
+				sElement = ((String) uiElement.get("elementName"));
+				if (lData.containsKey(sElement)) {
+					String sData = (String) lData.get(sElement);
+					String sType = (String) uiElement.get("type");
+					if (sType.equals(""))
+						sType = getElementType(uiElement, 0);
+
+					if (sType.equals("button")) {
+						if (sData.equals("No")) {
+							iCount = 0;
+							continue;
+						} else if (sData.contains("-")
+								&& sData.substring(0, sData.indexOf("-"))
+										.equals("Yes"))
+							iCount = Integer.parseInt(sData.substring(sData
+									.indexOf("-") + 1)); // This is to convert
+						// the -x value to the
+						// no of repetitions.
+						else if (sData.equals("Yes"))
+							iCount = 1;
+					} else if (sType.equals("checkBox")) {
+						if (sData.equals("No")) {
+							iCount = 0;
+							continue;
+						} else if (sData.contains("Yes")) {
+							iCount = 1;
+							sDataValues = sData.split(";");
+						}
+					} else if (sType.equals("dropDown")
+							|| sType.equals("textBox")
+							|| sType.equals("textArea")) {
+						sDataValues = sData.split(";");
+						if (sDataValues.length == 1
+								&& !(sDataValues[0].equals("")))
+							iCount = 1;
+						else if (sDataValues.length > 1)
+							iCount = sDataValues.length;
+					}
+					for (int i = 1; i <= iCount; i++) {
+						if (!((((String) uiElement.get("type"))
+								.equals("button")) || ((String) uiElement
+								.get("type")).equals("radioButton"))) {
+							if (sPageName.contains("queue"))
+								setDynamicElement(sElement, sDataValues[i],
+										i + 1);
+							else
+								setDynamicElement(sElement, sDataValues[i - 1],
+										i);
+						} else {
+							try {
+								if (sData.contains("Yes")) {
+									String sTemp = getLocator(sElement);
+									if (sTemp.contains(sDynamicValue1))
+										sTemp = sTemp.replaceAll(
+												sDynamicValue1, "");
+									if (checkElement(sTemp, 60)) {
+										try {
+											getwebDriverLocator(sTemp).click();
+										} catch (Exception e) {
+											e.printStackTrace();
+											System.out
+													.println("Exception in click .. set Dynamic ..");
+										}
+
+										Thread.sleep(3000);
+										waitForBrowserStability("300");
+									}
+								} else
+									continue;
+							} catch (Exception e) {
+								LOGGER.trace("Exception Caused by \""
+										+ sElement + "\"");
+							}
+							try {
+								Thread.sleep(1000);
+							} catch (InterruptedException e) {
+							}
+
+						}
+					}
+				}
+			} catch (Exception e) {
+				LOGGER.trace("Error : caused by " + sElement);
+			}
+		}
+	}
+
+	/****************************************************************
+	 * @Function Reset the value the existing dynamic elements with given data
+	 * @param Data
+	 *            to be used
+	 * @param PageName
+	 * @param Index
+	 *            of dynamic element
+	 ****************************************************************/
+	public void updateDynamicValues(Map lData, String sPageName, int startIndex) {
+		String sElement = "";
+		int iCount = 0;
+		String sDataValues[] = {};
+		List<Map> resultMap = getDynamicLocators(sPageName);
+		for (Map uiElement : resultMap) {
+			sElement = ((String) uiElement.get("elementName"));
+			if (lData.containsKey(sElement)) {
+				String sData = (String) lData.get(sElement);
+				String sType = (String) uiElement.get("type");
+				if (sType.equals(""))
+					sType = getElementType(uiElement, startIndex);
+
+				if (sType.equals("button")) {
+					if (sData.equals("No")) {
+						iCount = 0;
+						continue;
+					} else if (sData.contains("-")
+							&& sData.substring(0, sData.indexOf("-")).equals(
+									"Yes"))
+						iCount = Integer.parseInt(sData.substring(sData
+								.indexOf("-") + 1)); // This is to convert
+					// the -x value to the
+					// no of repetitions.
+					else if (sData.equals("Yes"))
+						iCount = 1;
+				} else if (sType.equals("checkBox")) {
+					if (sData.equals("No")) {
+						iCount = 0;
+						continue;
+					} else {
+						iCount = 1;
+						sDataValues = sData.split(";");
+					}
+				} else if (sType.equals("dropDown") || sType.equals("textBox")
+						|| sType.equals("textArea")) {
+					sDataValues = sData.split(";");
+					if (sDataValues.length == 1 && !(sDataValues[0].equals("")))
+						iCount = 1;
+					else if (sDataValues.length > 1)
+						iCount = sDataValues.length;
+				}
+				for (int i = startIndex, j = 0; i < (startIndex + iCount); i++, j++) {
+					if (!((((String) uiElement.get("type")).equals("button")) || ((String) uiElement
+							.get("type")).equals("radioButton"))) {
+						setDynamicElement(sElement, sDataValues[j], i);
+					} else {
+						try {
+							if (sData.contains("Yes")) {
+								String sTemp = getLocator(sElement);
+								if (sTemp.contains(sDynamicValue1))
+									sTemp = sTemp
+											.replaceAll(sDynamicValue1, "");
+								if (checkElement(sTemp, 60)) {
+									getwebDriverLocator(sTemp).click();
+									Thread.sleep(3000);
+									waitForBrowserStability("300");
+								}
+							} else
+								continue;
+						} catch (Exception e) {
+							LOGGER.trace("Exception Caused by \"" + sElement
+									+ "\"");
+						}
+						try {
+							Thread.sleep(1000);
+						} catch (InterruptedException e) {
+						}
+
+					}
+				}
+			}
+		}
+	}
+
+	/****************************************************************
+	 * @Function Gets the dynamic locators for the specified page
+	 * @param Page
+	 *            Name whose elements has to be filtered
+	 * @return List of UI Element map
+	 ****************************************************************/
+	public List<Map> getDynamicLocators(String sPageName) {
+		List<Map> resultMap = new ArrayList();
+		Map result;
+		try {
+			for (Map map : uiMap) {
+				String temp = (String) map.get("page");
+				if (sPageName.matches(temp)
+						&& ((String) map.get("elementName")).startsWith("_")) {
+					result = map;
+					resultMap.add(result);
+				}
+			}
+		} catch (Exception e) {
+			LOGGER.trace("Error: Caused while searching the dynamic locators of page \" "
+					+ sPageName + " \"");
+		}
+		return resultMap;
+	}
+
+	/****************************************************************
+	 * @Function sets the value to the specified dynamic Element
+	 * @param Element
+	 *            whose value has to be set
+	 * @param Value
+	 *            to be set
+	 * @param Index
+	 *            of dynamic element
+	 ****************************************************************/
+	public void setDynamicElement(String sElementName, String sValue, int ix) {
+		Map result = null;
+		try {
+			result = getElementMap(sElementName);
+			if (result != null) {
+				String sLocator = (String) result.get("locator");
+				sLocator = sLocator.replace(sDynamicValue1, "" + ix);
+				String sType = (String) result.get("type");
+				if (sType.equals(""))
+					sType = getElementType(result, ix);
+				String sOtherInfo = "";
+				try {
+					sOtherInfo = (String) result.get("others");
+				} catch (NullPointerException e) {
+				}
+				if ((sType.equalsIgnoreCase("textBox") || sType
+						.equalsIgnoreCase("textArea")) && sValue != null) {
+					if (sOtherInfo != null && (sOtherInfo.matches("ajax"))) {
+						String sAjaxInfo = (String) result.get("ajaxInfo");
+						if (sAjaxInfo.contains(sDynamicValue1))
+							sAjaxInfo = sAjaxInfo.replace(sDynamicValue1, ""
+									+ ix);
+						setAjaxElement(sLocator, sValue, sAjaxInfo);
+					} else {
+						try {
+							if (checkElement(sLocator, 3)) {
+								getwebDriverLocator(sLocator).sendKeys(sValue);
+								LOGGER.trace("Typed text '" + sValue
+										+ "' in the input element '"
+										+ sElementName + "'");
+
+							}
+						} catch (Exception e) {
+
+						}
+					}
+				} else if (sType.equalsIgnoreCase("dropDown")
+						&& (sValue != null)) {
+					if (checkElement(sLocator, 10)) {
+						try {
+
+							Select selectOption = new Select(
+									getwebDriverLocator(sLocator));
+							selectOption.selectByVisibleText(sValue);
+
+							LOGGER.trace("Selected label '" + sValue
+									+ "' in the input element '" + sElementName
+									+ "'");
+						} catch (Exception e) {
+
+						}
+					}
+				} else if (sType.equalsIgnoreCase("checkBox")) {
+					if (sValue.contains("-")
+							&& sValue.substring(0, sValue.indexOf("-")).equals(
+									"Yes") && sOtherInfo != null
+							&& (sOtherInfo.matches("series"))) {
+						int iCount;
+						if (checkElement(
+								sLocator.substring(0,
+										sLocator.indexOf("[_" + ix)), 10)) {
+							for (int i = 1; i <= (Integer) selenium
+									.getXpathCount(sLocator.substring(0,
+											sLocator.indexOf("[_" + ix))); i++) {
+								if (checkElement(
+										sLocator.replaceFirst("_" + ix, "" + i),
+										10)) {
+									getwebDriverLocator(
+											sLocator.replaceFirst("_" + ix, ""
+													+ i)).click();
+									LOGGER.trace("Unchecked "
+											+ sLocator.replaceFirst("_" + ix,
+													"" + i));
+								}
+							}
+						}
+						if (sValue.substring(sValue.indexOf("-") + 1,
+								sValue.length()).equals("All")) {
+							iCount = (Integer) selenium.getXpathCount(sLocator
+									.substring(0, sLocator.indexOf("[_" + ix)));
+						} else {
+							iCount = Integer.parseInt(sValue.substring(
+									sValue.indexOf("-") + 1, sValue.length()));
+						}
+						for (int i = 1; i <= iCount; i++) {
+							String sTemp = sLocator.replaceFirst("_" + ix, ""
+									+ i);
+							if (checkElement(sTemp, 10)) {
+								getwebDriverLocator(sTemp).click();
+								LOGGER.trace("Selected the input element '"
+										+ sTemp + "'");
+							}
+						}
+					} else {
+						if (checkElement(sLocator, 10)) {
+							getwebDriverLocator(sLocator).click();
+							selenium.fireEvent(sLocator, "click");
+							LOGGER.trace("Selected the input element '"
+									+ sElementName + "'");
+						}
+					}
+				} else if (sType.equalsIgnoreCase("multiSelectBox")) {
+					setMultiSelectBox(sElementName, sValue);
+				}
+			} else {
+				LOGGER.trace("Error : Unknown Element \"" + sElementName + "\"");
+			}
+		} catch (Exception e) {
+			LOGGER.trace("Error caused by Element \"" + sElementName + "\""
+					+ e.getMessage());
+		}
+	}
+
+	/****************************************************************
+	 * @Function Handles Login to the web-site
+	 * @param Data
+	 *            which has related information
+	 ****************************************************************/
+	public void login(Map data) {
+		try {
+			webDriver.manage().deleteAllCookies();
+			webDriver.get((String) data.get("URL"));
+			if (this.checkElement(getLocator("logIn.country"), 6)) {
+				System.out
+						.println("INFO: Launch of MDM application successful");
+			}
+			waitForBrowserStability("300");
+			getwebDriverLocator(getLocator("logIn.country")).sendKeys(
+					((String) data.get("logIn.country")).replace(".0", ""));
+			LOGGER.trace("Entered Country:"
+					+ ((String) data.get("logIn.country")).replace(".0", "")
+					+ ".");
+			getwebDriverLocator(getLocator("logIn.dealer")).sendKeys(
+					(String) data.get("logIn.dealer"));
+			LOGGER.trace("Entered Dealer:" + (String) data.get("logIn.dealer")
+					+ ".");
+			getwebDriverLocator(getLocator("logIn.user")).sendKeys(
+					(String) data.get("logIn.user"));
+			LOGGER.trace("Entered user:" + (String) data.get("logIn.user")
+					+ ".");
+			getwebDriverLocator(getLocator("logIn.password")).sendKeys(
+					(String) data.get("logIn.password"));
+			LOGGER.trace("Entered Password:"
+					+ (String) data.get("logIn.password") + ".");
+			getwebDriverLocator(getLocator("logIn.logIn")).click();
+			LOGGER.trace("Clicked on button:" + getLocator("logIn.logIn") + ".");
+			waitForBrowserStability("300");
+			if (getwebDriverLocator("COSMOS - INT").isDisplayed()) {
+				System.out.println("INFO: Login Successful");
+			}
+		} catch (RuntimeException e) {
+			LOGGER.trace("******Exception caught in webaction.login.*******");
+			e.printStackTrace();
+		}
+	}
+
+	/****************************************************************
+	 * @Function Navigates to the Menu
+	 * @param MenuNames
+	 ****************************************************************/
+	public void menuNavigation(String sMenuList) {
+		String[] aMenu;
+		aMenu = sMenuList.split(",");
+		try {
+			for (int i = 0; i < aMenu.length; i++) {
+				if (!(aMenu[i].matches(""))) {
+					getwebDriverLocator(getLocator(aMenu[i])).click();
+					LOGGER.trace("Clicked on link: " + getLocator(aMenu[i])
+							+ ".");
+					waitForBrowserStability("1000");
+				}
+			}
+		} catch (Exception e) {
+			if (sMenuList.contains(","))
+				sMenuList = sMenuList.replaceAll(",", "-->");
+			LOGGER.trace("Exception caught while Navigating to  " + sMenuList);
+		}
+	}
+
+	/****************************************************************
+	 * @Function Retrieves the type of the specified UI element
+	 * @param UI
+	 *            Element
+	 * @param Index
+	 *            of the Element
+	 * @return Type if UI Element
+	 ****************************************************************/
+	public String getElementType(Map uiElement, int index) {
+		String sElementType = "";
+		String sLocator = (String) uiElement.get("locator");
+		sLocator = sLocator.replace(sDynamicValue1, "" + index);
+		try {
+			if (webDriver
+					.findElement(By.xpath("//input[@id='" + sLocator + "']"))
+					.getAttribute("type").equals("text")) {
+				sElementType = "textBox";
+			}
+		} catch (SeleniumException e) {
+			if (webDriver.findElement(
+					By.xpath("//select[@id='" + sLocator + "']")).isDisplayed())
+				sElementType = "dropDown";
+			try {
+				if (selenium.getAttribute(
+						"//div[@id='" + sLocator + "']/@class").contains(
+						"multiselect"))
+					sElementType = "multiSelectBox";
+			} catch (SeleniumException e1) {
+				e1.printStackTrace();
+			}
+		}
+		return sElementType;
+	}
+
+	/****************************************************************
+	 * @Function Retrieves the UI Map of the specified UI element
+	 * @param UI
+	 *            Element
+	 * @return UI Map of the specified UI element
+	 ****************************************************************/
+	public Map getElementMap(String sElementName) {
+		Map locatorMap = null;
+		try {
+			for (Map map : uiMap) {
+				String sTemp = (String) map.get("elementName");
+				if (sElementName.matches(sTemp)) {
+					locatorMap = map;
+					break;
+				}
+			}
+			if (locatorMap == null) {
+				LOGGER.trace("Error : Unknown Element \"" + sElementName + "\"");
+
+			}
+		} catch (Exception e) {
+			LOGGER.trace("Error : Caused while trying to retrieve the map for Unknown Element \""
+					+ sElementName + "\"");
+		}
+		return locatorMap;
+	}
+
+	/****************************************************************
+	 * @Function Checks the presence of element up-to specified Time
+	 * @param Name
+	 *            of the element
+	 * @param Time
+	 * @return Boolean Result
+	 ****************************************************************/
+	public boolean checkElement(String sActualLocator, int timeInSec) {
+		WebDriverWait waitForElement = new WebDriverWait(webDriver,
+				TimeUnit.MILLISECONDS.toSeconds(500));
+		WebElement webElement = getwebDriverLocator(sActualLocator);
+		boolean result = false;
+		try {
+			for (int second = 0;; second++) {
+				if (second >= timeInSec * 2) {
+					LOGGER.trace("TimeOut waiting for " + sActualLocator + " "
+							+ (second / 2) + " Seconds");
+					break;
+				}
+				try {
+					if (webElement.isDisplayed()) {
+						result = true;
+						break;
+					}
+				} catch (Exception e) {
+				}
+				waitForElement.until(ExpectedConditions
+						.visibilityOf(webElement));
+			}
+		} catch (Exception e) {
+			LOGGER.trace("Error: Caused while Verifying the Presence of Element \" "
+					+ sActualLocator + " \"");
+		}
+
+		return result;
+	}
+
+	private Predicate<WebDriver> ExpectedConditions(
+			WebElement getwebDriverLocator) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	/****************************************************************
+	 * @Function checks the presence of element for incremental box
+	 * @param ActualLocator
+	 * @param time
+	 * @return boolean
+	 ****************************************************************/
+	public boolean checkElementForIncrementalBox(String sActualLocatore,
+			int time) {
+		boolean result = false;
+		WebElement webElement = getwebDriverLocator(sActualLocatore);
+		WebDriverWait waitForElement = new WebDriverWait(webDriver,
+				TimeUnit.MILLISECONDS.toSeconds(500));
+		try {
+			for (int second = 0;; second++) {
+				if (second >= time * 2) {
+					LOGGER.trace("TimeOut waiting for " + sActualLocatore + " "
+							+ (second / 2) + " Seconds");
+					break;
+				}
+				try {
+					if (webElement.isDisplayed()) {
+						result = true;
+						break;
+					}
+				} catch (Exception e) {
+				}
+				waitForElement.until(ExpectedConditions
+						.visibilityOf(webElement));
+			}
+		} catch (Exception e) {
+			LOGGER.trace("Error: Caused while Verifying the Presence of Element \" "
+					+ sActualLocatore + " \"");
+		}
+
+		return result;
+	}
+
+	/****************************************************************
+	 * @Function checks the presence of the specified text,up-to specified Time
+	 * @param Text
+	 *            to be verified
+	 * @param Maximum
+	 *            time-limit(In Seconds)
+	 * @return boolean Result
+	 ****************************************************************/
+	public boolean checkText(String text, int timeInSec) {
+		boolean result = false;
+		WebDriverWait waitForElement = new WebDriverWait(webDriver,
+				TimeUnit.MILLISECONDS.toSeconds(500));
+
+		try {
+			for (int second = 0;; second++) {
+				if (second >= timeInSec * 10) {
+					LOGGER.trace("TimeOut for " + second);
+					break;
+				}
+				try {
+					if (webDriver.findElement(By.tagName("body")).getText()
+							.contains(text)) {
+						result = true;
+						break;
+					}
+				} catch (Exception e) {
+				}
+				waitForElement.until(ExpectedConditions.visibilityOf(webDriver
+						.findElement(By.tagName("body"))));
+			}
+		} catch (Exception e) {
+			LOGGER.trace("Error: Caused while Verifying the Presence of Text \" "
+					+ text + " \"");
+		}
+		return result;
+	}
+
+	/****************************************************************
+	 * @Function Gets the value of the specified locator
+	 * @param ElementName
+	 *            whose value has to be obtained
+	 ****************************************************************/
+	public String getValue(String sElementName) {
+		Map result = null;
+		String sValue = "";
+		try {
+			result = getElementMap(sElementName);
+			if (result != null) {
+				String sLocator = (String) result.get("locator");
+				String sType = (String) result.get("type");
+				if (getwebDriverLocator(sLocator).isDisplayed()) {
+					if (sType.equalsIgnoreCase("textBox")
+							|| sType.equalsIgnoreCase("textArea")) {
+						sValue = getwebDriverLocator(sLocator).getText();
+					} else if (sType.equalsIgnoreCase("label")) {
+						sValue = getwebDriverLocator(sLocator).getText();
+
+					} else if (sType.equalsIgnoreCase("dropDown")) {
+
+						Select selectOption = new Select(
+								getwebDriverLocator(sLocator));
+						sValue = selectOption.getFirstSelectedOption()
+								.getText();
+
+					} else if (sType.equalsIgnoreCase("checkBox")) {
+						if (getwebDriverLocator(sLocator).isSelected()) {
+							sValue = "Yes";
+						} else {
+							sValue = "No";
+						}
+					} else if (sType.equalsIgnoreCase("radioButton")) {
+						if (getwebDriverLocator(sLocator).isSelected()) {
+							sValue = "Yes";
+						} else {
+							sValue = "No";
+						}
+					}
+				}
+			}
+		} catch (NullPointerException e) {
+			LOGGER.trace("Error: Element Not Present \" " + sElementName
+					+ " \"");
+		} catch (Exception e) {
+			String eMsg = e.getMessage();
+			if (eMsg == "Specified element is not a Select (has no options)")
+				System.out.println(" ");
+			else if (eMsg == "" + sElementName + " not found")
+				LOGGER.trace("" + sElementName + " not found");
+
+		}
+		return sValue;
+	}
+
+	/****************************************************************
+	 * @Function Gets the value of the specified page
+	 * @param PageName
+	 ****************************************************************/
+	public List<HashMap<String, String>> getPage(String sPageName) {
+		List<HashMap<String, String>> elementList = new ArrayList<HashMap<String, String>>();
+		String sElement = "";
+		String sLocator = "";
+		List<Map> result = getPageLocators(sPageName);
+		try {
+			for (Map map : result) {
+				sElement = ((String) map.get("elementName"));
+				sLocator = (String) map.get("locator");
+				if (getwebDriverLocator(sLocator).isDisplayed()) {
+					if ((!((String) map.get("type")).equals("button"))) {
+						HashMap<String, String> pageResult = new HashMap<String, String>();
+						pageResult.put(sElement, getValue(sElement));
+						elementList.add(pageResult);
+					}
+				}
+			}
+		} catch (Exception e) {
+			LOGGER.trace("Error : Caused while verifying the Values of Page \" "
+					+ sPageName + "\"");
+		}
+		return elementList;
+	}
+
+	/****************************************************************
+	 * @Function Gets the list of locators that belongs to the specified page
+	 * @param PageName
+	 ****************************************************************/
+	public List<Map> getPageLocators(String sPageName) {
+		Map result;
+		List<Map> resultMap = new ArrayList();
+		String sElement = "";
+		try {
+			for (Map map : uiMap) {
+				sElement = ((String) map.get("elementName"));
+				if (sElement.contains(".")) {
+					String temp = sElement.substring(0, sElement.indexOf("."));
+					if (sPageName.matches(temp)) {
+						result = map;
+						resultMap.add(result);
+					}
+				}
+			}
+		} catch (Exception e) {
+			LOGGER.trace("Error: Caused while searching the locators of page \" "
+					+ sPageName + " \"");
+		}
+		return resultMap;
+	}
+
+	/****************************************************************
+	 * @Function Checks whether the page is loaded or not
+	 * @param Maximum
+	 *            time to wait(In seconds)
+	 * @return
+	 ****************************************************************/
+	public boolean waitForBrowserStability(String maxTimeInSec) {
+		boolean bResult = false;
+		int maxWait = Integer.parseInt(maxTimeInSec);
+		int secsWaited = 0;
+		try {
+			do {
+				Thread.sleep(100);
+				secsWaited++;
+				if (isBrowserLoaded()) {
+					bResult = true;
+					break;
+				}
+			} while (secsWaited < (maxWait * 10));
+			Thread.sleep(100);
+		} catch (Exception e) {
+			LOGGER.trace("Exception caught while waiting for the page to load ");
+			bResult = false;
+		}
+		return bResult;
+	}
+
+	/****************************************************************
+	 * @Function Checks if body of the page is loaded or not
+	 * @return Boolean Result
+	 ****************************************************************/
+	public boolean isBrowserLoaded() {
+		try {
+			if ((Boolean
+					.parseBoolean(selenium
+							.getEval("(\"complete\" == selenium.browserbot.getCurrentWindow().document.readyState)")))) {
+				return true;
+			} else {
+				LOGGER.trace("Waiting for page to load.");
+				return false;
+			}
+		} catch (SeleniumCommandTimedOutException e) {
+			e.getMessage();
+			return false;
+		}
+	}
+
+	/****************************************************************
+	 * @Function Retrieves the value of the specified locator
+	 * @param Map
+	 *            of the UI element
+	 * @param Locator
+	 *            whose value has to be retrieved
+	 * @return Value of the specified locator
+	 ****************************************************************/
+	public String getDynamicValue(Map locatorMap, String sActualLocator) {
+		String sValue = "";
+		String sElementName = "";
+		WebElement boxType = getwebDriverLocator(sActualLocator);
+		try {
+			if (locatorMap != null) {
+				sElementName = (String) locatorMap.get("elementName");
+				String sType = (String) locatorMap.get("type");
+				if (boxType.isDisplayed()) {
+					if (sType.equalsIgnoreCase("textBox")
+							|| sType.equalsIgnoreCase("textArea")) {
+						sValue = boxType.getText();
+					} else if (sType.equalsIgnoreCase("dropDown")) {
+						sValue = selenium.getSelectedLabel(sActualLocator);
+					} else if (sType.equalsIgnoreCase("checkBox")) {
+						if (boxType.isSelected()) {
+							sValue = "Yes";
+						} else {
+							sValue = "No";
+						}
+					} else if (sType.equalsIgnoreCase("radioButton")) {
+						if (boxType.isSelected()) {
+							sValue = "Yes";
+						} else {
+							sValue = "No";
+						}
+					} else if (sType.equalsIgnoreCase("label")) {
+						sValue = boxType.getText();
+					}
+				}
+			} else {
+				LOGGER.trace("Error : Unknown Element \"" + sElementName + "\"");
+			}
+		} catch (NullPointerException e) {
+			LOGGER.trace("Error: Element Not Present \" " + sElementName
+					+ " \"");
+		} catch (Exception e) {
+
+		}
+		return sValue;
+	}
+
+	/****************************************************************
+	 * @Function Identifies the Locator as needed by web-webDriver object
+	 * @param Locator
+	 *            to be identified
+	 * @return Identified locator as Web Element
+	 ****************************************************************/
+	public WebElement getwebDriverLocator(String actualLocator) {
+		WebElement element = null;
+		try {
+			if (actualLocator.startsWith("//")) {
+				element = webDriver.findElement(By.xpath(actualLocator));
+			} else {
+				try {
+					element = webDriver.findElement(By.id(actualLocator));
+				} catch (Exception e) {
+					try {
+						element = webDriver.findElement(By.name(actualLocator));
+					} catch (Exception e1) {
+						try {
+							element = webDriver.findElement(By
+									.className(actualLocator));
+						} catch (Exception e2) {
+							try {
+								element = webDriver.findElement(By
+										.cssSelector(actualLocator));
+							} catch (Exception e3) {
+								try {
+									element = webDriver.findElement(By
+											.linkText(actualLocator));
+								} catch (Exception e4) {
+									LOGGER.trace("Element not found ");
+								}
+							}
+						}
+					}
+				}
+			}
+
+		} catch (Exception e) {
+
+			LOGGER.trace("Element not found ");
+		}
+		return element;
+
+	}
+
+	/****************************************************************
+	 * @Function clicks the specified element,using web-webDriver object
+	 * @param Element
+	 *****************************************************************/
+	public void click(String sElement) {
+		try {
+			getwebDriverLocator(getLocator(sElement)).click();
+		} catch (Exception e) {
+			try {
+				getwebDriverLocator(getLocator(sElement)).click();
+			} catch (Exception e2) {
+				e2.printStackTrace();
+			}
+		}
+	}
+
+	/****************************************************************
+	 * @Function Invokes Enter Key-press Event
+	 * @param Maximum
+	 *            Time to wait(In Seconds)
+	 ****************************************************************/
+	public void pressEnter(int afterTimeInSec) {
+		try {
+			Robot robot = new Robot();
+			Thread.sleep(afterTimeInSec * 1000);
+			robot.keyPress(KeyEvent.VK_ENTER);
+			robot.keyRelease(KeyEvent.VK_ENTER);
+			waitForBrowserStability("1000");
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		} catch (AWTException e) {
+			e.printStackTrace();
+		}
+	}
+
+	/****************************************************************
+	 * @Function inserts wait
+	 ****************************************************************/
+	public void sleep(int secs) {
+		try {
+			Thread.sleep(secs * 1000);
+		} catch (InterruptedException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+	}
+
+	/****************************************************************
+	 * @Function compares actual and expected messages from the application and
+	 *           returns results accordingly.
+	 ****************************************************************/
+	public boolean verifyMsg(String sElement, String expectedMsg) {
+		boolean isVerified = false;
+		String sLocator = getLocator(sElement);
+		String actualMsg = webDriver.findElement(By.xpath(sLocator)).getText();
+		if (actualMsg.equalsIgnoreCase(expectedMsg)) {
+			isVerified = true;
+		}
+		return isVerified;
+	}
+}
