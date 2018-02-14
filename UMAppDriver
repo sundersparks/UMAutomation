@@ -1,0 +1,669 @@
+package com.mufg.tap.selenium.actions;
+
+import java.awt.AWTException;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.sql.Timestamp;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.concurrent.TimeUnit;
+
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+
+import jxl.Cell;
+import jxl.Sheet;
+import jxl.Workbook;
+import jxl.read.biff.BiffException;
+
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang3.time.StopWatch;
+import org.openqa.selenium.By;
+import org.openqa.selenium.Keys;
+import org.openqa.selenium.NoSuchElementException;
+import org.openqa.selenium.OutputType;
+import org.openqa.selenium.TakesScreenshot;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.firefox.FirefoxDriver;
+import org.openqa.selenium.ie.InternetExplorerDriver;
+import org.openqa.selenium.interactions.ClickAction;
+import org.openqa.selenium.remote.DesiredCapabilities;
+import org.openqa.selenium.safari.SafariDriver;
+import org.openqa.selenium.support.ui.FluentWait;
+import org.openqa.selenium.support.ui.Wait;
+import org.openqa.selenium.support.ui.WebDriverWait;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
+
+import com.mufg.tap.selenium.engine.TestResult;
+import com.mufg.tap.selenium.engine.TestResult.ResultType;
+import com.mufg.tap.selenium.harness.ConfigParams;
+import com.mufg.tap.selenium.screens.RandomString;
+import com.mufg.tap.selenium.utils.DataRow;
+import com.mufg.tap.selenium.utils.ExcelAccess;
+import com.mufg.tap.selenium.utils.Logger;
+import com.mufg.tap.selenium.utils.SleepUtils;
+import com.mufg.tap.selenium.utils.SleepUtils.TimeSlab;
+
+import com.gargoylesoftware.htmlunit.ElementNotFoundException;
+import com.google.common.base.Function;
+
+
+@SuppressWarnings("unused")
+public class AppDriver extends WebAppDriver {
+	public static WebDriver driver;
+	public static HashMap<Integer, TestResult> summaryMAP = new HashMap<Integer, TestResult>();
+	ConfigParams CONFIG = ConfigParams.SINGLETON;
+	public String BrowserName = CONFIG.properties.getProperty("BrowserName");
+	public String env = CONFIG.properties.getProperty("ENV");
+	public static String userID;
+	public static String password;
+	public static String url;
+	public String script;
+	public WebElement input1;
+	public WebDriverWait wait = null;
+	public List<Map> uiMap;
+	Logger LOGGER = Logger.getInstance();
+	
+
+	String drivers = CONFIG.properties.getProperty("Drivers");
+	RandomString randomString= new RandomString();
+	public AppDriver() throws BiffException, IOException {
+		super();
+		readUIMap();
+	}
+
+	/****************************************************************
+	 * @Method Name : launchApp
+	 * @Method Description : Launch the application in particular browser
+	 * @param args
+	 *            :input,output
+	 * @param Sample
+	 *            Usage : launchApp(input, output);
+	 * @throws BiffException
+	 * @throws IOException
+	 * @throws InterruptedException
+	 ****************************************************************/
+	public void launchApp(DataRow input, DataRow output) throws BiffException,
+			IOException, InterruptedException {
+		try {
+			Runtime.getRuntime().exec("taskkill /F /IM iexplore.exe");
+			if (BrowserName.equalsIgnoreCase("")) {
+				//Selecting the browser to run the application.
+				if (ConfigParams.SINGLETON.properties.getProperty("TestDataMode").equalsIgnoreCase("excel")){
+				BrowserName = browserSelect();
+				}
+			}
+			String sBaseUrl = "about:blank";
+			//Load the driver from local for the selected browser.
+			if (BrowserName.equalsIgnoreCase("Chrome")) {
+			//	File file = new File(drivers + "\\chromedriver.exe");
+			//	System.setProperty("webdriver.chrome.driver",
+					//	file.getAbsolutePath());
+				System.setProperty("webdriver.chrome.driver",
+					"I:\\SOA\\ITS\\QAT\\NFT\\2.QTP\\BPM Upgrade Project\\chromedriver.exe");
+				driver = new ChromeDriver();
+				driver.manage().window().maximize();
+			} else if (BrowserName.equalsIgnoreCase("IE")) {
+				File file = new File(drivers + "\\IEDriverServer.exe");
+				System.setProperty("webdriver.ie.driver",
+						file.getAbsolutePath());
+				DesiredCapabilities ieCapabilities = DesiredCapabilities
+						.internetExplorer();
+				ieCapabilities.setCapability("nativeEvents", true);
+				ieCapabilities.setCapability(InternetExplorerDriver.ENABLE_PERSISTENT_HOVERING, false);
+				driver = new InternetExplorerDriver(ieCapabilities);
+				driver.manage().window().maximize();
+				//System.out.println("Title is:"+driver.getTitle());
+			} else if (BrowserName.equalsIgnoreCase("FireFox")) {
+				driver = new FirefoxDriver();
+				driver.manage().window().maximize();
+			} else if (BrowserName.equalsIgnoreCase("Safari")) {
+				driver = new SafariDriver();
+				driver.manage().window().maximize();
+			}
+			driver.get(input.get("url"));
+			SleepUtils.getInstance().sleep(TimeSlab.LOW);
+			wait = new WebDriverWait(driver, 30);
+			
+			//Validate landing page
+			if (driver.getTitle().contains(input.get("title"))) {
+				oRPT.log("Launch the Application in Browser", "",
+						ResultType.PASSED, "Launch BPM application",
+						"Application succesfully launched", false);
+			} else {
+				oRPT.log("Launch the Application in Browser", "",
+						ResultType.FAILED, "Launch BPM application",
+						"Failed to Launch BPM application", false);
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	/****************************************************************
+	 * @Method Name : browserSelect
+	 * @Method Description : Fetch the browser name from data sheet to launch the application
+	 * @param Sample
+	 *            Usage : browserSelect();
+	 * @throws BiffException
+	 * @throws IOException
+	 ****************************************************************/
+	public String browserSelect() throws BiffException, IOException {
+		File inputWorkbook = new File(
+				ConfigParams.SINGLETON.properties.getProperty("DataTable"));
+		Workbook workbook;
+		workbook = Workbook.getWorkbook(inputWorkbook);
+		Sheet sheet = workbook.getSheet("BrowserSelect");
+		Cell[] cells = sheet.getRow(1);
+		return cells[0].getContents();
+	}
+
+	/****************************************************************
+	 * @Method Name : fetchElement
+	 * @Method Description : Fetch the locator from the locators sheet 
+	 * @param args
+	 *            :String
+	 * @param Sample
+	 *            Usage : fetchElement(String);
+	 * @returns String 
+	 ****************************************************************/
+	public String fetchElement(String strElement) {
+		Map result = null;
+		String sLocator = "";
+		try {
+			for (Map map : uiMap) {
+				String temp = (String) map.get("elementName");
+				if (strElement.matches(temp) || strElement.equals(temp)) {
+					result = map;
+					break;
+				}
+			}
+			if (result != null) {
+				sLocator = (String) result.get("locator");
+			} else {
+				LOGGER.trace("Error : Unknown Element \" " + strElement + " \"");
+			}
+		} catch (Exception e) {
+			LOGGER.trace("Error: Trying to retrieve the Locator of Unknown Element \" "
+					+ strElement + " \"");
+		}
+		return sLocator;
+	}
+
+	/****************************************************************
+	 * @Method Name : fetchType
+	 * @Method Description : Fetch the type from the locators sheet 
+	 * @param args
+	 *            :String
+	 * @param Sample
+	 *            Usage : fetchType(String);
+	 * @return String
+	 ****************************************************************/
+	public String fetchType(String strElement) {
+		Map result = null;
+		String sLocator = "";
+		try {
+			for (Map map : uiMap) {
+				String temp = (String) map.get("elementName");
+				if (strElement.matches(temp) || strElement.equals(temp)) {
+					result = map;
+					break;
+				}
+			}
+			if (result != null)
+			{sLocator = (String) result.get("type");
+				System.out.println("Locator is:"+sLocator);
+		}
+			else {
+				LOGGER.trace("Error : Unknown Element \" " + strElement + " \"");
+			}
+
+		} catch (Exception e) {
+			LOGGER.trace("Error: Trying to retrieve the Locator of Unknown Element \" "
+					+ strElement + " \"");
+		}
+		return sLocator;
+	}
+
+	/****************************************************************
+	 * @Method Name : fetchPage
+	 * @Method Description : Fetch the page from the locators sheet 
+	 * @param args
+	 *            :String
+	 * @param Sample
+	 *            Usage : fetchPage(String);
+	 * @return String
+	 ****************************************************************/
+	public String fetchPage(String strElement) {
+		Map result = null;
+		String sLocator = "";
+		try {
+			for (Map map : uiMap) {
+				String temp = (String) map.get("elementName");
+				if (strElement.matches(temp) || strElement.equals(temp)) {
+					result = map;
+					break;
+				}
+			}
+			if (result != null)
+				sLocator = (String) result.get("page");
+			else {
+				LOGGER.trace("Error : Unknown Element \" " + strElement + " \"");
+			}
+
+		} catch (Exception e) {
+			LOGGER.trace("Error: Trying to retrieve the Locator of Unknown Element \" "
+					+ strElement + " \"");
+		}
+		return sLocator;
+	}
+
+	/****************************************************************
+	 * @Method Name : getElementMap
+	 * @Method Description : Fetch Map for an element from the locators sheet 
+	 * @param args
+	 *            :String
+	 * @param Sample
+	 *            Usage : getElementMap(String);
+	 * @return Map 
+	 ****************************************************************/
+	public Map getElementMap(String sElementName) {
+		Map locatorMap = null;
+		try {
+			for (Map map : uiMap) {
+				String sTemp = (String) map.get("elementName");
+				if (sElementName.matches(sTemp)) {
+					locatorMap = map;
+					break;
+				}
+			}
+			if (locatorMap == null) {
+				LOGGER.trace("Error : Unknown Element \"" + sElementName + "\"");
+
+			}
+		} catch (Exception e) {
+			LOGGER.trace("Error : Caused while trying to retrieve the map for Unknown Element \""
+					+ sElementName + "\"");
+		}
+		return locatorMap;
+	}
+
+	public void readUIMap() {
+		uiMap = readLocators();
+	}
+
+	/****************************************************************
+	 * @Method Name : readLocators
+	 * @Method Description : Reads locators sheet from the DataTable
+	 * @param Sample
+	 *            Usage : readLocators();
+	 * @return List
+	 ****************************************************************/
+	public List<Map> readLocators() {
+		List<Map> locators = new ArrayList<Map>();
+		String sheetName = "locators";
+		if (ConfigParams.SINGLETON.properties.getProperty("TestDataMode").equalsIgnoreCase("excel")) {
+		try {
+			ExcelAccess.accessSheet(
+					ConfigParams.SINGLETON.properties.getProperty("DataTable"),
+					sheetName, new ExcelAccess.RowArrayBuilder(locators));
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		}else if (ConfigParams.SINGLETON.properties.getProperty("TestDataMode").equalsIgnoreCase("xml")) {
+
+			try {
+
+				File fXmlFile = new File(
+						ConfigParams.SINGLETON.properties
+								.getProperty("locators"));
+				DocumentBuilderFactory dbFactory = DocumentBuilderFactory
+						.newInstance();
+				DocumentBuilder dBuilder = dbFactory.newDocumentBuilder();
+				Document doc = dBuilder.parse(fXmlFile);
+
+				doc.getDocumentElement().normalize();
+
+				//System.out.println("Root element :"
+				//		+ doc.getDocumentElement().getNodeName());
+
+				NodeList nList = doc.getElementsByTagName("elementName");
+
+				//System.out.println("----------------------------");
+
+				for (int temp = 0; temp < nList.getLength(); temp++) {
+
+					Node nNode = nList.item(temp);
+
+					//System.out.println("\nCurrent Element :"
+					//		+ nNode.getNodeName());
+					//System.out.println("\nCurrent Element :"
+					//		+ nNode.getAttributes().getNamedItem("name"));
+
+					if (nNode.getNodeType() == Node.ELEMENT_NODE) {
+
+						Element eElement = (Element) nNode;
+
+						//System.out.println("locator : " + eElement.getAttribute("locator"));
+						/*System.out.println("locator : "
+								+ eElement.getElementsByTagName("locator")
+										.item(0).getTextContent());
+						System.out.println("type : "
+								+ eElement.getElementsByTagName("type").item(0)
+										.getTextContent());
+						System.out.println("others : "
+								+ eElement.getElementsByTagName("others")
+										.item(0).getTextContent());*/
+						Map myloc = new HashMap();
+						myloc.put("locator",
+								eElement.getElementsByTagName("locator")
+										.item(0).getTextContent());
+						myloc.put(
+								"elementName",
+								nNode.getAttributes()
+										.getNamedItem("name")
+										.toString()
+										.substring(
+												nNode.getAttributes()
+														.getNamedItem("name")
+														.toString()
+														.indexOf("=") + 1));
+						myloc.put("page", doc.getDocumentElement()
+								.getNodeName());
+						myloc.put("type", eElement.getElementsByTagName("type")
+								.item(0).getTextContent());
+						myloc.put("others", eElement.getElementsByTagName("others")
+								.item(0).getTextContent());
+						//myloc.put("expectedresult", eElement.getElementsByTagName("expectedresult")
+							//	.item(0).getTextContent());
+						//myloc.put("actualresult", eElement.getElementsByTagName("actualresult")
+								//.item(0).getTextContent());
+						locators.add(0, myloc);
+					}
+
+				}
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		
+		}
+		return locators;
+	}
+
+	/****************************************************************
+	 * @Method Name : waitForPageTitleContains
+	 * @Method Description : Validates the Page Title
+	 * @param args
+	 *            :pageTitle , maxTime
+	 * @param Sample
+	 *            Usage : waitForPageTitleContains(String,long);
+	 * @return boolean
+	 ****************************************************************/
+	public boolean waitForPageTitleContains(String pageTitle, long maxTime) {
+		boolean titleFound = false;
+		StopWatch sw = new StopWatch();
+		sw.start();
+		//Validates page (Based on page title) is displayed or not with in maxTime
+		while (sw.getTime() < maxTime) {
+			if (driver.getTitle().contains(pageTitle)) {
+				titleFound = true;
+				break;
+			}
+		}
+		return titleFound;
+	}
+
+	/****************************************************************
+	 * @param locator
+	 * @return
+	 ****************************************************************/
+	public WebElement fluentWait(final By locator) {
+		Wait<WebDriver> wait = new FluentWait<WebDriver>(driver)
+				.withTimeout(30, TimeUnit.SECONDS)
+				.pollingEvery(5, TimeUnit.SECONDS)
+				.ignoring(NoSuchElementException.class);
+
+		WebElement foo = wait.until(new Function<WebDriver, WebElement>() {
+			public WebElement apply(WebDriver driver) {
+				return driver.findElement(locator);
+			}
+		});
+
+		return foo;
+	};
+
+	/****************************************************************
+	 * @Method Name : fetchData
+	 * @Method Description : fetch the locator content based on the element name  
+	 * @param args
+	 *            :String
+	 * @param Sample
+	 *            Usage : fetchData(String);
+	 * @throws BiffException
+	 * @throws IOException
+	 * @return String
+	 ****************************************************************/
+	public String fetchData(String strElement) throws BiffException,
+			IOException {
+		String retval="";
+		if (ConfigParams.SINGLETON.properties.getProperty("TestDataMode").equalsIgnoreCase("excel")){
+		int intRows, j;
+		File inputWorkbook = new File(
+				ConfigParams.SINGLETON.properties.getProperty("DataTable"));
+		Workbook workbook;
+		workbook = Workbook.getWorkbook(inputWorkbook);
+		Sheet sheet = workbook.getSheet("locators");
+		intRows = sheet.getRows();
+		Cell[] cells = sheet.getRow(1);
+		for (j = 1; j <= intRows; j++) {
+			cells = sheet.getRow(j);
+			if (cells[1].getContents().equalsIgnoreCase(strElement)) {
+				break;
+			}
+		}
+		retval = cells[2].getContents();
+		}else if (ConfigParams.SINGLETON.properties.getProperty("TestDataMode").equalsIgnoreCase("xml")) {
+
+			
+			try {
+				File fXmlFile = new File(ConfigParams.SINGLETON.properties.getProperty("locators"));
+				DocumentBuilderFactory dbFactory = DocumentBuilderFactory.newInstance();
+				DocumentBuilder dBuilder = dbFactory.newDocumentBuilder();
+				Document doc = dBuilder.parse(fXmlFile);
+						
+				doc.getDocumentElement().normalize();
+	
+				//System.out.println("Root element :" + doc.getDocumentElement().getNodeName());
+						
+				NodeList nList = doc.getElementsByTagName("elementName");
+						
+				//System.out.println("----------------------------");
+				
+				for (int temp = 0; temp < nList.getLength(); temp++) {
+	
+					Node nNode = nList.item(temp);
+							
+					//System.out.println("\nCurrent Element :" + nNode.getNodeName());
+					//System.out.println("\nCurrent Element :" + nNode.getAttributes().getNamedItem("name"));
+									
+					if (nNode.getNodeType() == Node.ELEMENT_NODE) {
+	
+						Element eElement = (Element) nNode;
+						
+						if (nNode.getAttributes().getNamedItem("name").toString().contains(strElement)){
+							retval = eElement.getElementsByTagName("locator").item(0).getTextContent();
+							break;
+							}
+	
+						}
+					}
+			} catch (Exception e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			
+	}
+	
+	return retval;
+	}
+
+
+	/****************************************************************
+	 * @param locator
+	 * @param maxWaitTime
+	 * @return WebElement
+	 ****************************************************************/
+	public WebElement waitForWebElement(By locator, double maxWaitTime) {
+		Boolean isElementFound = false;
+		StopWatch sw = new StopWatch();
+		sw.start();
+		while (sw.getTime() < maxWaitTime) {
+			try {
+				if (driver.findElements(locator).size() > 0) {
+					isElementFound = true;
+					break;
+				}
+				Thread.sleep(1500);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}
+		if (!isElementFound) {
+			throw new ElementNotFoundException(locator.toString(),
+					locator.toString(), locator.toString());
+		}
+		return driver.findElement(locator);
+	}
+
+	
+	/****************************************************************
+	 * @Method Name : isValidString
+	 * @Method Description : Validates if the string is empty
+	 * @param args
+	 *            :String
+	 * @param Sample
+	 *            Usage : isValidString(String);
+	 * @return boolean
+	 ****************************************************************/
+	public static boolean isValidString(String cString) {
+		boolean isEmpty = true;
+		try {
+			if (cString.isEmpty()) {
+				isEmpty = false;
+			}
+		} catch (NullPointerException e) {
+			isEmpty = false;
+		}
+		return isEmpty;
+	}
+
+	/****************************************************************
+	 * @Method Name : performAction
+	 * @Method Description : Perform some operation based on the locator type. For Ex: If it  is a text box, enter the data in text box
+	 * @param args
+	 *            :By locator, String attribute, String value
+	 * @param Sample
+	 *            Usage : performAction(By locator, String attribute, String value);
+	 * @throws Exception
+	 * @return WebElement
+	 ****************************************************************/
+	public WebElement performAction(By locator, String attribute, String value)
+			throws Exception {
+		try {
+			WebElement actionElement = waitForWebElement(locator, 20000);
+			//If the attribute is a text box, enter the data
+			if (attribute.equalsIgnoreCase("TextBox")) {
+				actionElement.sendKeys(value);
+			} 
+			//If the attribute is a Button, click on the Button.
+			else if (attribute.equalsIgnoreCase("Button")) {
+				actionElement.click();
+			} 
+			//If the attribute is a RadioButton, click on the RadioButton.
+			else if (attribute.equalsIgnoreCase("RadioButton")) {
+				actionElement.click();
+			
+			} 
+			//If the attribute is a CheckBox, click on the CheckBox.
+			else if (attribute.equalsIgnoreCase("CheckBox")) {
+				if (actionElement.isSelected()) {
+					if (value.equalsIgnoreCase("No")) {
+						actionElement.click();
+					}
+				} else {
+					if (value.equalsIgnoreCase("Yes")) {
+						actionElement.click();
+					}
+				}
+			
+			} 
+			//If the attribute is a Link, click on the Link.
+			else if (attribute.equalsIgnoreCase("Link")) {
+				if (BrowserName.equalsIgnoreCase("IE")) {
+					actionElement.sendKeys(Keys.CONTROL);
+					actionElement.sendKeys(Keys.ENTER);
+				} else {
+					actionElement.sendKeys(Keys.CONTROL);
+					actionElement.click();
+				}
+
+			} else if (attribute.equalsIgnoreCase("CtrlLinkClick")) {
+
+			}
+			//If the attribute is a Dropdown, Select the option.
+			else if (attribute.equalsIgnoreCase("Dropdown")) {
+				List<WebElement> optionChildAcct = actionElement
+						.findElements(By.tagName("option"));
+				for (WebElement optn : optionChildAcct) {
+					if (optn.getText().contains(value)) {
+						optn.click();
+						break;
+					}
+				}
+			}
+			System.out.println("Perform the action on " + attribute
+					+ "locator is " + locator);
+			return actionElement;
+		}
+
+		catch (Exception e) {
+			throw new Exception("Failed to perform action on " + attribute
+					+ " of locator " + locator);
+		}
+
+	}
+	 public void getscreenshot() throws Exception 
+     {
+		 String fileName ="H:\\Screenshots\\";
+		 String dateStamp=getTimeStamp();
+		 String filestamp = fileName +" "+ dateStamp + ".png";
+
+
+         File scrFile = ((TakesScreenshot)driver).getScreenshotAs(OutputType.FILE);
+         //The below method will save the screen shot in d drive with name "screenshot.png"
+         FileUtils.copyFile(scrFile, new File(filestamp));
+     }
+	 
+
+
+	String getTimeStamp() {
+		DateFormat format = new SimpleDateFormat("yyyy_MM_dd_hh_mm_ss");
+		String timeStamp = format.format(new Date());
+		return timeStamp;
+	}
+
+}
